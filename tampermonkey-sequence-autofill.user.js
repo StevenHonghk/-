@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Safe Sequence Autofill
 // @namespace    local.edge.autofill.safe
-// @version      0.2.7
+// @version      0.2.8
 // @description  Paste values line by line and fill empty form fields in order. Manual trigger only; never submits forms.
 // @author       local
 // @match        http://*/*
@@ -92,6 +92,7 @@
   let bridgeWorkerInstalled = false;
   let bridgeRequestId = 0;
   const pendingBridgeRequests = new Map();
+  let lastFilledControls = [];
 
   function parseValuesText(text) {
     return String(text || '')
@@ -967,6 +968,22 @@
     };
   }
 
+  function clearLastFilledControls() {
+    const controls = lastFilledControls.filter((control) => control && control.element);
+    const labels = [];
+
+    for (const control of controls) {
+      setControlValue(control, '');
+      labels.push(control.label || '');
+    }
+
+    lastFilledControls = [];
+    return {
+      cleared: controls.length,
+      labels
+    };
+  }
+
   function fillCurrentPage(values) {
     const controls = discoverControls();
     const plan = planSequentialFill(controls, values);
@@ -974,6 +991,8 @@
     for (const assignment of plan.assignments) {
       setControlValue(assignment.control, assignment.value);
     }
+
+    lastFilledControls = plan.assignments.map((assignment) => assignment.control);
 
     return {
       filled: plan.assignments.length,
@@ -1096,6 +1115,11 @@
           reply(hasHomeworkFrame() ? await requestHomeworkFrame('fill', message.payload) : fillCurrentPage(message.payload && message.payload.values ? message.payload.values : []));
           return;
         }
+
+        if (message.type === 'clear') {
+          reply(hasHomeworkFrame() ? await requestHomeworkFrame('clear') : clearLastFilledControls());
+          return;
+        }
       } catch (error) {
         reply(null, error);
       }
@@ -1124,6 +1148,14 @@
     }
 
     return fillCurrentPage(values);
+  }
+
+  async function clearDetectedPage() {
+    if (getAutofillFrameMode() === 'controller') {
+      return requestHomeworkFrame('clear');
+    }
+
+    return clearLastFilledControls();
   }
 
   async function getControlsForAi() {
@@ -1286,6 +1318,58 @@
     document.addEventListener('change', scheduleLiveRefresh, true);
   }
 
+  function makePanelDraggable(panel, handle) {
+    let dragState = null;
+
+    handle.addEventListener('pointerdown', (event) => {
+      const target = event.target instanceof Element ? event.target : null;
+      if (event.button !== 0 || (target && target.closest('button,input,textarea,select,summary'))) {
+        return;
+      }
+
+      const rect = panel.getBoundingClientRect();
+      dragState = {
+        pointerId: event.pointerId,
+        startX: event.clientX,
+        startY: event.clientY,
+        left: rect.left,
+        top: rect.top
+      };
+
+      panel.style.left = `${rect.left}px`;
+      panel.style.top = `${rect.top}px`;
+      panel.style.right = 'auto';
+      panel.style.bottom = 'auto';
+      handle.setPointerCapture(event.pointerId);
+      event.preventDefault();
+    });
+
+    handle.addEventListener('pointermove', (event) => {
+      if (!dragState || dragState.pointerId !== event.pointerId) {
+        return;
+      }
+
+      const rect = panel.getBoundingClientRect();
+      const maxLeft = Math.max(0, window.innerWidth - rect.width);
+      const maxTop = Math.max(0, window.innerHeight - rect.height);
+      const nextLeft = Math.min(Math.max(0, dragState.left + event.clientX - dragState.startX), maxLeft);
+      const nextTop = Math.min(Math.max(0, dragState.top + event.clientY - dragState.startY), maxTop);
+      panel.style.left = `${nextLeft}px`;
+      panel.style.top = `${nextTop}px`;
+    });
+
+    handle.addEventListener('pointerup', (event) => {
+      if (dragState && dragState.pointerId === event.pointerId) {
+        dragState = null;
+        handle.releasePointerCapture(event.pointerId);
+      }
+    });
+
+    handle.addEventListener('pointercancel', () => {
+      dragState = null;
+    });
+  }
+
   function openPanel() {
     document.getElementById(PANEL_ID)?.remove();
 
@@ -1308,7 +1392,8 @@
 
     const header = document.createElement('div');
     header.textContent = '顺序填空';
-    header.style.cssText = 'padding:10px 12px;font-weight:700;border-bottom:1px solid #e5e7eb;';
+    header.style.cssText = 'padding:10px 12px;font-weight:700;border-bottom:1px solid #e5e7eb;cursor:move;user-select:none;';
+    makePanelDraggable(panel, header);
 
     const textarea = document.createElement('textarea');
     textarea.value = getStoredValuesText();
@@ -1409,6 +1494,25 @@
         fillButton.textContent = '填入当前页';
       }
     });
+
+    const clearFilledButton = createButton('清除已填写', async () => {
+      clearFilledButton.disabled = true;
+      clearFilledButton.textContent = '清除中...';
+
+      try {
+        const report = await clearDetectedPage();
+        refreshStatus();
+        showToast(report.cleared > 0
+          ? `已清除 ${report.cleared} 个由脚本填写的内容。`
+          : '没有可清除的已填写内容。');
+      } catch (error) {
+        showToast(error && error.message ? error.message : '清除已填写内容失败。');
+      } finally {
+        clearFilledButton.disabled = false;
+        clearFilledButton.textContent = '清除已填写';
+      }
+    });
+    clearFilledButton.style.background = '#b45309';
 
     const clearButton = createButton('清空保存', () => {
       textarea.value = '';
@@ -1559,7 +1663,7 @@
     });
     closeButton.style.background = '#374151';
 
-    actions.append(saveButton, fillButton, clearButton, closeButton);
+    actions.append(saveButton, fillButton, clearFilledButton, clearButton, closeButton);
     panel.append(header, textarea, status, preview, aiBox, actions);
     document.documentElement.appendChild(panel);
     activePanelRefresh = refreshStatus;

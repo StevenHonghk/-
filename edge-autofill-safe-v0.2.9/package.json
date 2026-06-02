@@ -1,0 +1,17 @@
+{
+  "name": "edge-autofill-safe",
+  "version": "0.2.9",
+  "private": true,
+  "type": "module",
+  "description": "Local Microsoft Edge autofill helper with allow-listed URLs and manual review.",
+  "scripts": {
+    "test": "node --test test/*.test.js",
+    "start": "node src/cli.js",
+    "fill-seq": "node src/cli.js fill-seq",
+    "repeat": "node src/cli.js fill-seq --config configs/sequence.json",
+    "fill-current": "node src/cli.js fill-current --config configs/sequence.json"
+  },
+  "dependencies": {
+    "playwright": "^1.52.0"
+  }
+}

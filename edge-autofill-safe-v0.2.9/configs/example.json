@@ -1,0 +1,28 @@
+{
+  "targetUrl": "https://example.com/register",
+  "allowedOrigins": [
+    "https://example.com"
+  ],
+  "profileDir": "edge-profile",
+  "pauseAfterFill": true,
+  "fields": [
+    {
+      "label": "Full name",
+      "value": "Your Name",
+      "required": true
+    },
+    {
+      "selector": "input[name=\"email\"]",
+      "value": "you@example.com",
+      "required": true
+    },
+    {
+      "name": "phone",
+      "value": "13800000000"
+    },
+    {
+      "placeholder": "Company",
+      "value": "Example Co."
+    }
+  ]
+}

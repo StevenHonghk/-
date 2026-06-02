@@ -1,0 +1,9 @@
+{
+  "targetUrl": "https://example.com/register",
+  "allowedOrigins": [
+    "https://example.com"
+  ],
+  "valuesFile": "values.txt",
+  "profileDir": "edge-profile",
+  "pauseAfterFill": true
+}
